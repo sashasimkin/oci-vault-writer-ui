@@ -1,0 +1,26 @@
+image:
+  repository: ghcr.io/sashasimkin/oci-vault-writer-ui
+  tag: "0.1.0-rc.2"
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+replicas: 1
+enabled: false
+publicOrigin: ""
+runtimeSecret: ""
+ociCredentialsSecret: ""
+authSecret: ""
+allowedClientCIDR: ""
+service:
+  port: 8080
+ingressRoute:
+  host: ""
+  tlsSecretName: ""
+  entryPoints:
+    - websecure
+resources:
+  requests:
+    cpu: 10m
+    memory: 48Mi
+  limits:
+    cpu: 200m
+    memory: 160Mi

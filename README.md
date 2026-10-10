@@ -46,16 +46,25 @@ retrying; this interface cannot read a value back.
 Mount the catalog and OCI config/key read-only. The signing key must remain
 outside the image.
 
+## Helm chart
+
+The reusable deployment chart is maintained alongside the application at
+[`charts/vault-writer`](charts/vault-writer). It is disabled by default and
+requires Traefik's `IngressRoute` and `Middleware` CRDs, plus pre-created
+runtime catalog, OCI signing-config, and authentication Secrets. Set
+cluster-specific ingress, network, Secret, and resource values in the consuming
+GitOps repository rather than in this public chart.
+
 ## Container image
 
 Pull requests validate the application and build an image without publishing.
 Authorized branch and version-tag pushes publish multi-architecture images to
-GHCR. Semantic prerelease tags such as `0.1.0-rc.1` are intended for pre-merge
+GHCR. Semantic prerelease tags such as `0.1.0-rc.2` are intended for pre-merge
 deployment checks; stable version tags are published after verification.
 
 Example prerelease pull command:
 
-    docker pull ghcr.io/sashasimkin/oci-vault-writer-ui:0.1.0-rc.1
+    docker pull ghcr.io/sashasimkin/oci-vault-writer-ui:0.1.0-rc.2
 
 ## Local development
 

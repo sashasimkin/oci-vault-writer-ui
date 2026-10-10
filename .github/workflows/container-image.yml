@@ -10,6 +10,7 @@ on:
       - "web/**"
       - "static/**"
       - "tests/**"
+      - "charts/**"
       - ".github/workflows/container-image.yml"
   push:
     branches: ["**"]
@@ -22,6 +23,7 @@ on:
       - "web/**"
       - "static/**"
       - "tests/**"
+      - "charts/**"
       - ".github/workflows/container-image.yml"
 
 permissions:
@@ -36,6 +38,23 @@ jobs:
         with:
           python-version: "3.12"
       - uses: astral-sh/setup-uv@v10.3.0
+      - name: Set up Helm
+        uses: azure/setup-helm@v5.0.1
+      - name: Lint and render the Helm chart
+        run: |
+          helm lint charts/vault-writer
+          helm template vault-writer charts/vault-writer \
+            --set enabled=true \
+            --set-string publicOrigin=https://writer.example.test \
+            --set-string runtimeSecret=writer-runtime \
+            --set-string ociCredentialsSecret=writer-oci-credentials \
+            --set-string authSecret=writer-auth \
+            --set-string allowedClientCIDR=192.0.2.1/32 \
+            --set-string ingressRoute.host=writer.example.test \
+            --set-string ingressRoute.tlsSecretName=writer-tls > /tmp/vault-writer.yaml
+          grep -q 'kind: NetworkPolicy' /tmp/vault-writer.yaml
+          grep -q 'kind: IngressRoute' /tmp/vault-writer.yaml
+          grep -q '192.0.2.1/32' /tmp/vault-writer.yaml
       - name: Install locked dependencies
         run: uv sync --locked
       - name: Run unit and payload-boundary tests
