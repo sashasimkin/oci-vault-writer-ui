@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Запис OCI Vault</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="{{ url_for('static', filename='htmx.min.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body>
+  <main>
+    <h1>Запис секрету в OCI Vault</h1>
+    <p>Буде створено нову версію CURRENT. Прочитати значення через цей інтерфейс неможливо.</p>
+    <form hx-post="/api/write" hx-target="#status" hx-swap="innerHTML"
+          hx-disabled-elt="find button">
+      <label for="alias">Секрет зі списку дозволених</label>
+      <select id="alias" name="alias" required>
+        {% for alias, item in catalog %}
+        <option value="{{ alias }}">{{ item.name }}</option>
+        {% endfor %}
+      </select>
+      <label for="value">Нове значення</label>
+      <input id="value" type="password" name="value" required
+        autocomplete="off" autocapitalize="off" autocorrect="off"
+        spellcheck="false" data-1p-ignore="true" data-lpignore="true">
+      <button type="submit">Оновити Vault</button>
+      <div id="status" role="status" aria-live="polite"></div>
+    </form>
+  </main>
+</body>
+</html>
