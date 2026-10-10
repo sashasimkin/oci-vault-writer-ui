@@ -1,12 +1,25 @@
+FROM ghcr.io/astral-sh/uv:0.13.0 AS uv
+
+FROM python:3.12-slim-bookworm AS build
+COPY --from=uv /uv /uvx /bin/
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PROJECT_ENVIRONMENT=/opt/venv
+
+WORKDIR /app
+COPY pyproject.toml uv.lock ./
+RUN uv sync --locked --no-dev --no-install-project
+
 FROM python:3.12-slim-bookworm
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 WORKDIR /app
-COPY requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir --no-compile --requirement requirements.txt \
-    && groupadd --gid 10001 app \
+COPY --from=build /opt/venv /opt/venv
+RUN groupadd --gid 10001 app \
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin app
 
 COPY --chown=10001:10001 server.py ./server.py

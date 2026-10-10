@@ -4,7 +4,8 @@ on:
   pull_request:
     paths:
       - "Dockerfile"
-      - "requirements.txt"
+      - "pyproject.toml"
+      - "uv.lock"
       - "server.py"
       - "web/**"
       - "static/**"
@@ -15,7 +16,8 @@ on:
     tags: ["v*"]
     paths:
       - "Dockerfile"
-      - "requirements.txt"
+      - "pyproject.toml"
+      - "uv.lock"
       - "server.py"
       - "web/**"
       - "static/**"
@@ -33,10 +35,11 @@ jobs:
       - uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
-      - name: Install application dependencies
-        run: python -m pip install --disable-pip-version-check --no-cache-dir --requirement requirements.txt
+      - uses: astral-sh/setup-uv@v10.3.0
+      - name: Install locked dependencies
+        run: uv sync --locked
       - name: Run unit and payload-boundary tests
-        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. python -m unittest discover -s tests -v
+        run: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. uv run --locked --no-sync python -m unittest discover -s tests -v
       - uses: docker/setup-buildx-action@v4.4.1
       - name: Build without publishing
         uses: docker/build-push-action@v7.4.0
@@ -69,7 +72,7 @@ jobs:
           images: ghcr.io/${{ github.repository_owner }}/oci-vault-writer-ui
           tags: |
             type=ref,event=branch
-            type=ref,event=tag
+            type=semver,pattern={{version}}
             type=sha,format=long,prefix=sha-
       - name: Build and publish multi-platform image
         uses: docker/build-push-action@v7.4.0

@@ -48,18 +48,19 @@ outside the image.
 
 ## Container image
 
-The workflow validates pull requests without publishing, and publishes
-multi-architecture images to GHCR on branch pushes and version-tag pushes:
+Pull requests validate the application and build an image without publishing.
+Authorized branch and version-tag pushes publish multi-architecture images to
+GHCR. Semantic prerelease tags such as `0.1.0-rc.1` are intended for pre-merge
+deployment checks; stable version tags are published after verification.
 
-- ghcr.io/sashasimkin/oci-vault-writer-ui:<branch>
-- ghcr.io/sashasimkin/oci-vault-writer-ui:sha-<commit>
+Example prerelease pull command:
 
-Example pull command:
+    docker pull ghcr.io/sashasimkin/oci-vault-writer-ui:0.1.0-rc.1
 
-    docker pull ghcr.io/sashasimkin/oci-vault-writer-ui:feat-oci-vault-writer-ui
+## Local development
 
-## Local checks
+Dependencies are declared in `pyproject.toml` and locked in `uv.lock`.
 
-    python3 -m pip install --requirement requirements.txt
-    PYTHONPATH=. python3 -m unittest discover -s tests -v
+    uv sync --locked
+    PYTHONPATH=. uv run --locked --no-sync python -m unittest discover -s tests -v
     docker build --tag oci-vault-writer-ui:local .
