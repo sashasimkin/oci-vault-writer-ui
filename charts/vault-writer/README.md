@@ -10,6 +10,10 @@ catalog Secret, OCI signing credential Secret, one-user BasicAuth Secret, source
 IPv4 CIDR, ingress hostname, and TLS Secret. Keep these bindings in the consuming
 GitOps configuration rather than chart defaults.
 
+`debugDiagnostics` defaults to `false`. When enabled, startup logs report only
+fixed phase names and outcomes; they never include configuration values,
+catalog entries, file paths, exception messages, or tracebacks.
+
 Image-pull credentials are optional and should be configured only when the
 selected container registry requires authentication. The public GHCR image does
 not need an image-pull Secret.
@@ -24,3 +28,5 @@ not need an image-pull Secret.
   permissions; mount its config and key read-only.
 - The workload does not need a Kubernetes API token or RBAC, and the catalog
   must not contain secret payloads.
+- Gunicorn error logs are sent to stderr for startup diagnosis. Application
+  diagnostics intentionally omit exception details and request contents.

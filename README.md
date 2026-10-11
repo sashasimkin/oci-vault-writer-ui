@@ -24,11 +24,13 @@ itself is not an authentication boundary. Use a dedicated OCI API signing
 identity with only the required secret-version update permissions, and mount
 its configuration and key read-only.
 
-Request and error details are not logged or returned to the browser. The
-browser does not persist submitted values. The catalog should contain only
-allowed secret identifiers and display metadata, never payloads. Keep actual
-OCI credentials and catalog contents out of source control, image layers,
-workflow logs, and CI artifacts.
+Request details and exception messages are never logged or returned to the
+browser. With `WRITER_DEBUG_DIAGNOSTICS=true`, startup logs contain only fixed
+phase names, outcomes, and exception class names; they never contain values,
+file paths, or tracebacks. The browser does not persist submitted values. The
+catalog should contain only allowed secret identifiers and display metadata,
+never payloads. Keep actual OCI credentials and catalog contents out of source
+control, image layers, workflow logs, and CI artifacts.
 
 If a write result is ambiguous, inspect only non-payload version metadata before
 retrying; this interface cannot read a value back.
@@ -42,6 +44,7 @@ retrying; this interface cannot read a value back.
 | PUBLIC_ORIGIN | Canonical HTTPS origin used for Host/Origin validation |
 | OCI_CONFIG_FILE | OCI config path; defaults to /run/oci/config |
 | OCI_PROFILE | OCI profile; defaults to VAULT_SECRET_WRITER |
+| WRITER_DEBUG_DIAGNOSTICS | Emit sanitized startup phase diagnostics when `true`; defaults to `false` |
 
 Mount the catalog and OCI config/key read-only. The signing key must remain
 outside the image.

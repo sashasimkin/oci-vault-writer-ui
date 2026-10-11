@@ -140,7 +140,7 @@ class StartupDiagnosticsTests(unittest.TestCase):
 
         output = "\n".join(captured.output)
         self.assertIn("writer_startup phase=catalog outcome=ready", output)
-        self.assertIn("writer_startup phase=oci_client outcome=ready", output)
+        self.assertIn("writer_startup phase=settings outcome=validated", output)
         self.assertNotIn(sentinel, output)
 
     def test_startup_failure_logs_only_phase_and_exception_type(self):

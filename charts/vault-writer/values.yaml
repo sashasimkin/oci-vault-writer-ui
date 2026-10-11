@@ -10,6 +10,7 @@ runtimeSecret: ""
 ociCredentialsSecret: ""
 authSecret: ""
 allowedClientCIDR: ""
+debugDiagnostics: false
 service:
   port: 8080
 ingressRoute:

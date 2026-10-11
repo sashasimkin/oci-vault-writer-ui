@@ -20,6 +20,18 @@ MAX_VALUE_BYTES = 24_000
 ALIAS_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 SECRET_ID_PATTERN = re.compile(r"^ocid1\.vaultsecret\.[A-Za-z0-9._-]+$")
 WRITE_LOCK = threading.Lock()
+STARTUP_LOGGER = logging.getLogger("vault_writer")
+
+
+def log_startup(phase: str, outcome: str, error_type: str | None = None) -> None:
+    if outcome == "failed":
+        STARTUP_LOGGER.error(
+            "writer_startup outcome=failed phase=%s error_type=%s",
+            phase,
+            error_type or "UnknownError",
+        )
+    elif os.environ.get("WRITER_DEBUG_DIAGNOSTICS", "").lower() == "true":
+        STARTUP_LOGGER.info("writer_startup phase=%s outcome=%s", phase, outcome)
 
 
 def load_catalog(path: str) -> dict[str, dict[str, str]]:
@@ -70,14 +82,21 @@ def update_secret(vault_client, secret: dict[str, str], value: str, alias: str) 
 def build_vault_client(config_path: str, profile: str, expected_user: str):
     import oci
 
+    log_startup("oci_config", "loading")
     config = oci.config.from_file(config_path, profile)
+    log_startup("oci_config", "loaded")
     if config.get("user") != expected_user:
         raise ValueError("unexpected OCI writer identity")
+    log_startup("oci_identity", "validated")
     if not all(config.get(key) for key in ("tenancy", "fingerprint", "key_file", "region")):
         raise ValueError("incomplete OCI signing configuration")
+    log_startup("oci_signing_config", "validated")
     if not Path(config["key_file"]).is_file():
         raise ValueError("OCI signing key is unavailable")
-    return oci.vault.VaultsClient(config, retry_strategy=oci.retry.NoneRetryStrategy())
+    log_startup("oci_signing_key", "available")
+    client = oci.vault.VaultsClient(config, retry_strategy=oci.retry.NoneRetryStrategy())
+    log_startup("oci_client", "ready")
+    return client
 
 
 def create_app(catalog: dict[str, dict[str, str]], vault_client, public_origin: str) -> Flask:
@@ -137,18 +156,28 @@ def create_app(catalog: dict[str, dict[str, str]], vault_client, public_origin: 
 
 
 def load_app() -> Flask:
+    phase = "catalog"
     try:
+        log_startup(phase, "loading")
         catalog = load_catalog(os.environ["WRITER_CATALOG_FILE"])
+        log_startup(phase, "ready")
+        phase = "settings"
         expected_user = os.environ["OCI_EXPECTED_USER_OCID"]
         public_origin = os.environ["PUBLIC_ORIGIN"].rstrip("/")
         origin = urlsplit(public_origin)
         if (not expected_user.startswith("ocid1.user.") or origin.scheme != "https" or not origin.netloc
                 or origin.path or origin.query or origin.fragment):
             raise ValueError("invalid writer settings")
+        log_startup(phase, "validated")
+        phase = "oci_client"
         client = build_vault_client(os.environ.get("OCI_CONFIG_FILE", "/run/oci/config"),
                                     os.environ.get("OCI_PROFILE", "VAULT_SECRET_WRITER"), expected_user)
-        return create_app(catalog, client, public_origin)
-    except Exception:
+        phase = "application"
+        app = create_app(catalog, client, public_origin)
+        log_startup(phase, "ready")
+        return app
+    except Exception as error:
+        log_startup(phase, "failed", type(error).__name__)
         raise SystemExit("Vault writer configuration is invalid; refusing to start.") from None
 
 

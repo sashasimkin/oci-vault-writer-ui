@@ -78,6 +78,8 @@ spec:
               value: VAULT_SECRET_WRITER
             - name: WRITER_CATALOG_FILE
               value: /etc/vault-writer/catalog.json
+            - name: WRITER_DEBUG_DIAGNOSTICS
+              value: {{ .Values.debugDiagnostics | quote }}
           volumeMounts:
             - name: oci-credentials
               mountPath: /run/oci
