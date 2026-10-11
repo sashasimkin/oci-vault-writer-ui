@@ -27,4 +27,4 @@ COPY --chown=10001:10001 web ./web
 COPY --chown=10001:10001 static ./static
 USER 10001:10001
 EXPOSE 8080
-ENTRYPOINT ["gunicorn", "--bind=0.0.0.0:8080", "--workers=1", "--threads=4", "--access-logfile=/dev/null", "--error-logfile=-", "--capture-output", "app:app"]
+ENTRYPOINT ["gunicorn", "--bind=0.0.0.0:8080", "--workers=1", "--threads=4", "--worker-tmp-dir=/dev/shm", "--access-logfile=/dev/null", "--error-logfile=-", "--capture-output", "server:app"]
