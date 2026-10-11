@@ -65,7 +65,22 @@ jobs:
         with:
           context: .
           push: false
+          load: true
           tags: ghcr.io/${{ github.repository_owner }}/oci-vault-writer-ui:validation
+      - name: Smoke-test the read-only container
+        run: |
+          docker run --detach --name writer-smoke --read-only \
+            --publish 127.0.0.1:18080:8080 \
+            ghcr.io/${{ github.repository_owner }}/oci-vault-writer-ui:validation
+          trap 'docker rm --force writer-smoke >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --output /dev/null http://127.0.0.1:18080/healthz; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs writer-smoke
+          exit 1
 
   publish:
     if: github.event_name == 'push'
