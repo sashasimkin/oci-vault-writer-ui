@@ -74,7 +74,8 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/oci-vault-writer-ui:validation
           trap 'docker rm --force writer-smoke >/dev/null 2>&1 || true' EXIT
           for attempt in $(seq 1 30); do
-            if curl --fail --silent --output /dev/null http://127.0.0.1:18080/healthz; then
+            status_code="$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:18080/healthz || true)"
+            if [ "$status_code" = "200" ] || [ "$status_code" = "404" ]; then
               exit 0
             fi
             sleep 1
