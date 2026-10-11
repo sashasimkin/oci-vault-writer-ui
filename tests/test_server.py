@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import types
 import unittest
@@ -110,6 +111,58 @@ class HttpBoundaryTests(unittest.TestCase):
             status, _ = self.request({"alias": "arbitrary_ocid", "value": "synthetic"})
         self.assertEqual(status, 400)
         update.assert_not_called()
+
+
+class StartupDiagnosticsTests(unittest.TestCase):
+    def test_debug_startup_diagnostics_never_log_configuration_values(self):
+        sentinel = "SYNTHETIC_PRIVATE_VALUE_DO_NOT_LOG"
+        catalog = {
+            "test_secret": {
+                "id": f"ocid1.vaultsecret.{sentinel}",
+                "name": sentinel,
+                "description": "synthetic",
+            }
+        }
+        environment = {
+            "WRITER_DEBUG_DIAGNOSTICS": "true",
+            "WRITER_CATALOG_FILE": f"/private/{sentinel}/catalog.json",
+            "OCI_EXPECTED_USER_OCID": f"ocid1.user.{sentinel}",
+            "PUBLIC_ORIGIN": "https://writer.example.test",
+            "OCI_CONFIG_FILE": f"/private/{sentinel}/config",
+        }
+        with (
+            patch.dict(os.environ, environment, clear=True),
+            patch.object(server, "load_catalog", return_value=catalog),
+            patch.object(server, "build_vault_client", return_value=object()),
+            self.assertLogs("vault_writer", level="INFO") as captured,
+        ):
+            server.load_app()
+
+        output = "\n".join(captured.output)
+        self.assertIn("writer_startup phase=catalog outcome=ready", output)
+        self.assertIn("writer_startup phase=oci_client outcome=ready", output)
+        self.assertNotIn(sentinel, output)
+
+    def test_startup_failure_logs_only_phase_and_exception_type(self):
+        sentinel = "SYNTHETIC_PRIVATE_VALUE_DO_NOT_LOG"
+        environment = {
+            "WRITER_DEBUG_DIAGNOSTICS": "true",
+            "WRITER_CATALOG_FILE": "/private/catalog.json",
+            "OCI_EXPECTED_USER_OCID": "ocid1.user.synthetic",
+            "PUBLIC_ORIGIN": "https://writer.example.test",
+        }
+        with (
+            patch.dict(os.environ, environment, clear=True),
+            patch.object(server, "load_catalog", side_effect=RuntimeError(sentinel)),
+            self.assertLogs("vault_writer", level="ERROR") as captured,
+            self.assertRaises(SystemExit),
+        ):
+            server.load_app()
+
+        output = "\n".join(captured.output)
+        self.assertIn("writer_startup outcome=failed phase=catalog", output)
+        self.assertIn("error_type=RuntimeError", output)
+        self.assertNotIn(sentinel, output)
 
 
 if __name__ == "__main__":
