@@ -1,0 +1,10 @@
+* { box-sizing: border-box; }
+body { margin: 0; background: #111827; color: #f9fafb; font: 16px/1.5 system-ui, sans-serif; }
+main { max-width: 38rem; margin: 8vh auto; padding: 2rem; background: #1f2937; border-radius: 1rem; }
+h1 { margin-top: 0; font-size: 1.6rem; }
+label { display: block; margin-top: 1.25rem; font-weight: 650; }
+select, input, button { width: 100%; margin-top: .4rem; padding: .75rem; border: 1px solid #6b7280; border-radius: .4rem; font: inherit; }
+select, input { background: #111827; color: #f9fafb; }
+button { margin-top: 1rem; border: 0; background: #2563eb; color: white; font-weight: 700; cursor: pointer; }
+button:disabled { opacity: .6; cursor: wait; }
+#status { min-height: 1.5em; }

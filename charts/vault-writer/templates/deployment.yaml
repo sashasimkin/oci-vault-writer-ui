@@ -1,0 +1,118 @@
+{{- if .Values.enabled }}
+{{- if not .Values.runtimeSecret }}
+{{- fail "vault-writer requires a runtime catalog Secret" }}
+{{- end }}
+{{- if not .Values.ociCredentialsSecret }}
+{{- fail "vault-writer requires a pre-created OCI signing-config Secret" }}
+{{- end }}
+{{- if not .Values.authSecret }}
+{{- fail "vault-writer requires a pre-created one-user Traefik BasicAuth Secret" }}
+{{- end }}
+{{- if not (regexMatch "^[0-9]{1,3}(\\.[0-9]{1,3}){3}/32$" .Values.allowedClientCIDR) }}
+{{- fail "vault-writer allowedClientCIDR must be a single IPv4 /32" }}
+{{- end }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-writer
+  labels:
+    {{- include "vault-writer.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vault-writer
+  labels:
+    {{- include "vault-writer.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vault-writer
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vault-writer
+        app.kubernetes.io/instance: {{ .Release.Name }}
+      annotations:
+        secret.reloader.stakater.com/reload: {{ printf "%s,%s" .Values.runtimeSecret .Values.ociCredentialsSecret | quote }}
+    spec:
+      serviceAccountName: vault-writer
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: writer
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          env:
+            - name: PORT
+              value: {{ .Values.service.port | quote }}
+            - name: PUBLIC_ORIGIN
+              value: {{ .Values.publicOrigin | quote }}
+            - name: OCI_EXPECTED_USER_OCID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.runtimeSecret | quote }}
+                  key: expectedUserOcid
+            - name: OCI_CONFIG_FILE
+              value: /run/oci/config
+            - name: OCI_PROFILE
+              value: VAULT_SECRET_WRITER
+            - name: WRITER_CATALOG_FILE
+              value: /etc/vault-writer/catalog.json
+            - name: WRITER_DEBUG_DIAGNOSTICS
+              value: {{ .Values.debugDiagnostics | quote }}
+          volumeMounts:
+            - name: oci-credentials
+              mountPath: /run/oci
+              readOnly: true
+            - name: catalog
+              mountPath: /etc/vault-writer
+              readOnly: true
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+      volumes:
+        - name: oci-credentials
+          secret:
+            secretName: {{ .Values.ociCredentialsSecret | quote }}
+            defaultMode: 0440
+        - name: catalog
+          secret:
+            secretName: {{ .Values.runtimeSecret | quote }}
+            defaultMode: 0444
+{{- end }}

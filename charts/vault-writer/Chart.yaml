@@ -1,0 +1,6 @@
+apiVersion: v2
+name: vault-writer
+description: Allowlist-scoped OCI Vault secret version writer UI
+type: application
+version: 0.1.0-rc.2
+appVersion: "0.1.0-rc.2"
