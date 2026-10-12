@@ -72,7 +72,9 @@ class WriteTests(unittest.TestCase):
         )
         secret = {"id": "ocid1.vaultsecret.test.unique", "name": "example"}
         with patch.dict(sys.modules, {"oci": fake_oci}):
-            version = server.update_secret(FakeClient(), secret, "synthetic test fixture", "test_secret")
+            version = server.update_secret(
+                FakeClient(), secret, "synthetic test fixture", "test_secret", "operation-safe-123"
+            )
 
         self.assertEqual(version, 9)
         self.assertEqual(captured["secret_id"], secret["id"])
@@ -80,8 +82,48 @@ class WriteTests(unittest.TestCase):
         self.assertEqual(content.stage, "CURRENT")
         self.assertEqual(content.content, "c3ludGhldGljIHRlc3QgZml4dHVyZQ==")
         self.assertEqual(captured["retry_strategy"], "no-retry")
-        self.assertRegex(captured["opc_request_id"], r"^[a-f0-9-]{36}$")
+        self.assertEqual(captured["opc_request_id"], "operation-safe-123")
         self.assertNotIn("synthetic test fixture", json.dumps({"version": version}))
+
+    def test_writer_logs_safe_request_shape_and_success_metadata(self):
+        sentinel = "SYNTHETIC_PRIVATE_VALUE_DO_NOT_LOG"
+
+        class FakeResponse:
+            status = 200
+            data = types.SimpleNamespace(current_version_number=12)
+
+        class FakeClient:
+            def update_secret(self, *args, **kwargs):
+                return FakeResponse()
+
+        fake_models = types.SimpleNamespace(
+            UpdateSecretDetails=lambda **kwargs: types.SimpleNamespace(**kwargs),
+            Base64SecretContentDetails=lambda **kwargs: types.SimpleNamespace(**kwargs),
+        )
+        fake_oci = types.SimpleNamespace(
+            vault=types.SimpleNamespace(models=fake_models),
+            retry=types.SimpleNamespace(NoneRetryStrategy=lambda: "no-retry"),
+        )
+        with (
+            patch.dict(sys.modules, {"oci": fake_oci}),
+            patch.dict(os.environ, {"WRITER_DEBUG_DIAGNOSTICS": "true"}),
+            self.assertLogs("vault_writer.write", level="INFO") as captured,
+        ):
+            version = server.update_secret(
+                FakeClient(), {"id": "ocid1.vaultsecret.test.unique"}, sentinel,
+                "test_secret", "operation-safe-123",
+            )
+
+        output = "\n".join(captured.output)
+        self.assertEqual(version, 12)
+        self.assertNotIn(sentinel, output)
+        self.assertNotIn(server.base64.b64encode(sentinel.encode()).decode(), output)
+        self.assertIn("writer_write_request operation_id=operation-safe-123", output)
+        self.assertIn("payload_size=0_256 base64_valid=true", output)
+        self.assertIn("content_type=BASE64 stage=CURRENT", output)
+        self.assertIn("request_fields=secretContent,contentType,name,stage,content", output)
+        self.assertIn("writer_write outcome=confirmed operation_id=operation-safe-123", output)
+        self.assertIn("http_status=200 current_version_number=12", output)
 
 
 class HttpBoundaryTests(unittest.TestCase):

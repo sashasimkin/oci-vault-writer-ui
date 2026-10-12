@@ -27,9 +27,11 @@ its configuration and key read-only.
 Request details, submitted values, response bodies, and exception messages are
 never logged or returned to the browser. With
 `WRITER_DEBUG_DIAGNOSTICS=true`, startup logs contain fixed phase names and
-outcomes; failed writes additionally log a correlation ID, catalog alias,
-exception class, sanitized OCI code/status, and OCI request ID. The browser
-does not persist submitted values. The catalog should contain only allowed
+outcomes; write logs include a correlation ID, catalog alias, coarse payload
+size bucket, base64 validity, fixed request field names, and—on response—HTTP
+status and version number. Failures log only exception class, sanitized OCI
+code/status, OCI request ID, and allowlisted error-field/hint labels. The
+browser does not persist submitted values. The catalog should contain only allowed
 secret identifiers and display metadata, never payloads. Keep actual OCI
 credentials and catalog contents out of source control, image layers, workflow
 logs, and CI artifacts.

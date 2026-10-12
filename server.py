@@ -83,6 +83,52 @@ def log_write_failure(operation_id: str, alias: str, error: Exception) -> None:
     )
 
 
+def log_write_request(operation_id: str, alias: str, value: str, encoded: str) -> None:
+    if os.environ.get("WRITER_DEBUG_DIAGNOSTICS", "").lower() != "true":
+        return
+
+    size = len(value.encode("utf-8"))
+    if size <= 256:
+        size_bucket = "0_256"
+    elif size <= 4096:
+        size_bucket = "257_4096"
+    else:
+        size_bucket = "4097_plus"
+    try:
+        base64.b64decode(encoded, validate=True)
+        base64_valid = "true"
+    except (ValueError, TypeError):
+        base64_valid = "false"
+
+    WRITE_LOGGER.info(
+        "writer_write_request operation_id=%s alias=%s payload_size=%s base64_valid=%s "
+        "content_type=BASE64 stage=CURRENT request_fields=secretContent,contentType,name,stage,content",
+        operation_id,
+        alias,
+        size_bucket,
+        base64_valid,
+    )
+
+
+def log_write_success(operation_id: str, alias: str, response, version: int | None) -> None:
+    if os.environ.get("WRITER_DEBUG_DIAGNOSTICS", "").lower() != "true":
+        return
+
+    status = getattr(response, "status", None)
+    if not isinstance(status, int) or isinstance(status, bool) or not 100 <= status <= 599:
+        status = "unknown"
+    outcome = "confirmed" if isinstance(version, int) and not isinstance(version, bool) else "response_unconfirmed"
+    version_number = version if isinstance(version, int) and not isinstance(version, bool) else "unknown"
+    WRITE_LOGGER.info(
+        "writer_write outcome=%s operation_id=%s alias=%s http_status=%s current_version_number=%s",
+        outcome,
+        operation_id,
+        alias,
+        status,
+        version_number,
+    )
+
+
 def load_catalog(path: str) -> dict[str, dict[str, str]]:
     catalog = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(catalog, dict) or not catalog:
@@ -110,7 +156,9 @@ def load_catalog(path: str) -> dict[str, dict[str, str]]:
     return normalized
 
 
-def update_secret(vault_client, secret: dict[str, str], value: str, alias: str) -> int | None:
+def update_secret(
+    vault_client, secret: dict[str, str], value: str, alias: str, operation_id: str
+) -> int | None:
     import oci
 
     encoded = base64.b64encode(value.encode("utf-8")).decode("ascii")
@@ -120,12 +168,15 @@ def update_secret(vault_client, secret: dict[str, str], value: str, alias: str) 
             content_type="BASE64", name=version_name, stage="CURRENT", content=encoded
         )
     )
+    log_write_request(operation_id, alias, value, encoded)
     response = vault_client.update_secret(
-        secret["id"], details, opc_request_id=str(uuid.uuid4()),
+        secret["id"], details, opc_request_id=operation_id,
         retry_strategy=oci.retry.NoneRetryStrategy(),
     )
     version = getattr(response.data, "current_version_number", None)
-    return version if isinstance(version, int) else None
+    version = version if isinstance(version, int) and not isinstance(version, bool) else None
+    log_write_success(operation_id, alias, response, version)
+    return version
 
 
 def build_vault_client(config_path: str, profile: str, expected_user: str):
@@ -192,7 +243,7 @@ def create_app(catalog: dict[str, dict[str, str]], vault_client, public_origin: 
         operation_id = uuid.uuid4().hex
         try:
             with WRITE_LOCK:
-                version = update_secret(vault_client, catalog[alias], value, alias)
+                version = update_secret(vault_client, catalog[alias], value, alias, operation_id)
             return render_template("status.html", ok=True, version=version), 200
         except Exception as error:
             # Keep the HTMX response generic and log only sanitized diagnostics.
