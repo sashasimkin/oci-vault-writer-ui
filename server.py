@@ -24,6 +24,8 @@ STARTUP_LOGGER = logging.getLogger("vault_writer")
 WRITE_LOGGER = logging.getLogger("vault_writer.write")
 SAFE_ERROR_CODE_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9]{0,63}$")
 SAFE_REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:/-]{1,128}$")
+SAFE_ERROR_FIELDS = ("secretContent", "contentType", "content", "name", "stage")
+SAFE_ERROR_HINTS = ("base64", "invalid", "json", "parse", "required", "unsupported")
 
 
 def log_startup(phase: str, outcome: str, error_type: str | None = None) -> None:
@@ -53,16 +55,31 @@ def log_write_failure(operation_id: str, alias: str, error: Exception) -> None:
     request_id = getattr(error, "request_id", None)
     if not isinstance(request_id, str) or not SAFE_REQUEST_ID_PATTERN.fullmatch(request_id):
         request_id = "unknown"
+    message = getattr(error, "message", None)
+    if isinstance(message, str):
+        error_fields = [
+            field for field in SAFE_ERROR_FIELDS
+            if re.search(rf"(?<![A-Za-z0-9_]){field}(?![A-Za-z0-9_])", message, re.IGNORECASE)
+        ]
+        error_hints = [
+            hint for hint in SAFE_ERROR_HINTS
+            if re.search(rf"\b{hint}\b", message, re.IGNORECASE)
+        ]
+    else:
+        error_fields = []
+        error_hints = []
 
     WRITE_LOGGER.warning(
         "writer_write outcome=unconfirmed operation_id=%s alias=%s error_type=%s "
-        "error_code=%s http_status=%s oci_request_id=%s",
+        "error_code=%s http_status=%s oci_request_id=%s error_fields=%s error_hints=%s",
         operation_id,
         alias,
         error_type,
         error_code,
         status,
         request_id,
+        ",".join(error_fields) or "unknown",
+        ",".join(error_hints) or "unknown",
     )
 
 
@@ -100,7 +117,7 @@ def update_secret(vault_client, secret: dict[str, str], value: str, alias: str) 
     version_name = datetime.now(timezone.utc).strftime("web-%Y%m%dT%H%M%SZ-") + uuid.uuid4().hex[:8] + "-" + alias
     details = oci.vault.models.UpdateSecretDetails(
         secret_content=oci.vault.models.Base64SecretContentDetails(
-            name=version_name, stage="CURRENT", content=encoded
+            content_type="BASE64", name=version_name, stage="CURRENT", content=encoded
         )
     )
     response = vault_client.update_secret(

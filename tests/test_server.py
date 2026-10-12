@@ -121,6 +121,7 @@ class HttpBoundaryTests(unittest.TestCase):
             status = 403
             request_id = "request-safe-123"
             headers = {"authorization": sentinel}
+            message = f"Invalid secretContent contentType: {sentinel}"
 
         with (
             patch.dict(os.environ, {"WRITER_DEBUG_DIAGNOSTICS": "true"}),
@@ -140,8 +141,29 @@ class HttpBoundaryTests(unittest.TestCase):
         self.assertIn("alias=test_secret", output)
         self.assertIn("error_type=SyntheticServiceError", output)
         self.assertIn("error_code=NotAuthorizedOrNotFound", output)
+        self.assertIn("error_fields=secretContent,contentType", output)
+        self.assertIn("error_hints=invalid", output)
         self.assertIn("http_status=403", output)
         self.assertIn("oci_request_id=request-safe-123", output)
+
+    def test_oci_sdk_serializes_secret_update_body_to_expected_schema(self):
+        from oci.base_client import BaseClient
+        from oci.vault.models import UpdateSecretDetails, Base64SecretContentDetails, vault_type_mapping
+
+        details = UpdateSecretDetails(
+            secret_content=Base64SecretContentDetails(
+                content_type="BASE64", name="test-version", stage="CURRENT", content="YWJj"
+            )
+        )
+        serializer = object.__new__(BaseClient)
+        serializer.complex_type_mappings = vault_type_mapping
+
+        self.assertEqual(
+            serializer.sanitize_for_serialization(details),
+            {"secretContent": {
+                "contentType": "BASE64", "name": "test-version", "stage": "CURRENT", "content": "YWJj"
+            }},
+        )
 
     def test_request_cannot_choose_an_unlisted_secret(self):
         with patch.object(server, "update_secret") as update:
