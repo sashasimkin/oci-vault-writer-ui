@@ -16,7 +16,8 @@ catalog alias, coarse payload-size bucket, base64 validity, fixed request field
 names, and response status/version metadata. Failures report the exception
 class, sanitized OCI code/status/request ID, and allowlisted error-field/hint
 labels. Logs never include submitted values, request/response bodies, raw
-exception messages, or tracebacks.
+exception messages, or tracebacks. The writer logger has its own INFO-level
+stderr handler so Gunicorn does not suppress these diagnostics.
 
 Image-pull credentials are optional and should be configured only when the
 selected container registry requires authentication. The public GHCR image does

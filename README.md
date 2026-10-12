@@ -48,7 +48,7 @@ retrying; this interface cannot read a value back.
 | PUBLIC_ORIGIN | Canonical HTTPS origin used for Host/Origin validation |
 | OCI_CONFIG_FILE | OCI config path; defaults to /run/oci/config |
 | OCI_PROFILE | OCI profile; defaults to VAULT_SECRET_WRITER |
-| WRITER_DEBUG_DIAGNOSTICS | Emit sanitized startup phase diagnostics when `true`; defaults to `false` |
+| WRITER_DEBUG_DIAGNOSTICS | Emit sanitized startup and write diagnostics when `true`; defaults to `false` |
 
 Mount the catalog and OCI config/key read-only. The signing key must remain
 outside the image.

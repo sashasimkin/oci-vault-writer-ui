@@ -1,3 +1,4 @@
+import io
 import json
 import os
 import re
@@ -104,17 +105,23 @@ class WriteTests(unittest.TestCase):
             vault=types.SimpleNamespace(models=fake_models),
             retry=types.SimpleNamespace(NoneRetryStrategy=lambda: "no-retry"),
         )
-        with (
-            patch.dict(sys.modules, {"oci": fake_oci}),
-            patch.dict(os.environ, {"WRITER_DEBUG_DIAGNOSTICS": "true"}),
-            self.assertLogs("vault_writer.write", level="INFO") as captured,
-        ):
-            version = server.update_secret(
-                FakeClient(), {"id": "ocid1.vaultsecret.test.unique"}, sentinel,
-                "test_secret", "operation-safe-123",
-            )
+        handler = server.WRITE_LOGGER.handlers[0]
+        original_stream = handler.stream
+        stream = io.StringIO()
+        handler.setStream(stream)
+        try:
+            with (
+                patch.dict(sys.modules, {"oci": fake_oci}),
+                patch.dict(os.environ, {"WRITER_DEBUG_DIAGNOSTICS": "true"}),
+            ):
+                version = server.update_secret(
+                    FakeClient(), {"id": "ocid1.vaultsecret.test.unique"}, sentinel,
+                    "test_secret", "operation-safe-123",
+                )
+        finally:
+            handler.setStream(original_stream)
 
-        output = "\n".join(captured.output)
+        output = stream.getvalue()
         self.assertEqual(version, 12)
         self.assertNotIn(sentinel, output)
         self.assertNotIn(server.base64.b64encode(sentinel.encode()).decode(), output)
