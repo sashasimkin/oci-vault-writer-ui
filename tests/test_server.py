@@ -1,3 +1,5 @@
+import hashlib
+import html
 import io
 import json
 import os
@@ -7,6 +9,7 @@ import types
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from urllib.parse import quote
 from unittest.mock import patch
 
 import server
@@ -163,15 +166,26 @@ class HttpBoundaryTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertNotIn("synthetic-not-a-secret", body)
 
-    def test_debug_write_failure_logs_only_safe_oci_diagnostics(self):
-        sentinel = "SYNTHETIC_PRIVATE_VALUE_DO_NOT_LOG"
+    def test_debug_write_failure_logs_details_but_redacts_submitted_value(self):
+        sentinel = 'SYNTHETIC/PRIVATE+<VALUE>&"DO_NOT_LOG'
+        encoded = server.base64.b64encode(sentinel.encode()).decode()
+        escaped = quote(sentinel, safe="")
+        html_encoded = html.escape(sentinel, quote=True)
+        json_encoded = json.dumps(sentinel, ensure_ascii=True)[1:-1]
 
         class SyntheticServiceError(Exception):
             code = "NotAuthorizedOrNotFound"
             status = 403
             request_id = "request-safe-123"
-            headers = {"authorization": sentinel}
-            message = f"Invalid secretContent contentType: {sentinel}"
+            headers = {
+                "authorization": sentinel,
+                "content-type": "application/json",
+                "x-debug": encoded,
+            }
+            message = (
+                f"Invalid secretContent contentType: {sentinel}; base64={encoded}; "
+                f"url={escaped}; html={html_encoded}; json={json_encoded}"
+            )
 
         with (
             patch.dict(os.environ, {"WRITER_DEBUG_DIAGNOSTICS": "true"}),
@@ -184,6 +198,11 @@ class HttpBoundaryTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertNotIn(sentinel, body)
         self.assertNotIn(sentinel, output)
+        self.assertNotIn(encoded, output)
+        self.assertNotIn(escaped, output)
+        self.assertNotIn(html_encoded, output)
+        self.assertNotIn(json_encoded, output)
+        self.assertIn("secret_sha256=" + hashlib.sha256(sentinel.encode()).hexdigest(), output)
         operation_id = re.search(r"operation_id=([a-f0-9]{32})", output)
         self.assertIsNotNone(operation_id)
         self.assertIn(operation_id.group(1), body)
@@ -195,6 +214,14 @@ class HttpBoundaryTests(unittest.TestCase):
         self.assertIn("error_hints=invalid", output)
         self.assertIn("http_status=403", output)
         self.assertIn("oci_request_id=request-safe-123", output)
+        self.assertIn('"content-type":"application/json"', output)
+        self.assertIn("response_headers=", output)
+        self.assertIn("service_message=", output)
+        self.assertIn("****", output)
+        header_match = re.search(r"response_headers=(\{.*\})$", output)
+        self.assertIsNotNone(header_match)
+        self.assertEqual(json.loads(header_match.group(1))["authorization"], "****")
+        self.assertEqual(json.loads(header_match.group(1))["x-debug"], "****")
 
     def test_oci_sdk_serializes_secret_update_body_to_expected_schema(self):
         from oci.base_client import BaseClient

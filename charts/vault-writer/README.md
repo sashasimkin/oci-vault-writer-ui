@@ -10,14 +10,14 @@ catalog Secret, OCI signing credential Secret, one-user BasicAuth Secret, source
 IPv4 CIDR, ingress hostname, and TLS Secret. Keep these bindings in the consuming
 GitOps configuration rather than chart defaults.
 
-`debugDiagnostics` defaults to `false`. When enabled, startup logs report only
-fixed phase names and outcomes. Write logs report a correlation ID, allowed
-catalog alias, coarse payload-size bucket, base64 validity, fixed request field
-names, and response status/version metadata. Failures report the exception
-class, sanitized OCI code/status/request ID, and allowlisted error-field/hint
-labels. Logs never include submitted values, request/response bodies, raw
-exception messages, or tracebacks. The writer logger has its own INFO-level
-stderr handler so Gunicorn does not suppress these diagnostics.
+`debugDiagnostics` defaults to `false`. When enabled, write logs include a
+SHA-256 digest, request shape, OCI service message, and response headers. The
+submitted value and its base64, URL-encoded, and JSON-escaped forms are masked
+as `****` throughout diagnostic fields and header names/values. Authorization,
+proxy-authorization, cookie, set-cookie, and WWW-Authenticate response headers
+are always masked. Request/response bodies and tracebacks are never logged; do
+not enable OCI SDK HTTP wire/debug logging. The writer logger has its own
+INFO-level stderr handler so Gunicorn does not suppress these diagnostics.
 
 Image-pull credentials are optional and should be configured only when the
 selected container registry requires authentication. The public GHCR image does

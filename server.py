@@ -4,15 +4,18 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import html
 import json
 import logging
 import os
 import re
 import threading
 import uuid
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import quote, quote_plus, urlsplit
 
 from flask import Flask, abort, make_response, render_template, request
 
@@ -29,6 +32,9 @@ SAFE_ERROR_CODE_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9]{0,63}$")
 SAFE_REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:/-]{1,128}$")
 SAFE_ERROR_FIELDS = ("secretContent", "contentType", "content", "name", "stage")
 SAFE_ERROR_HINTS = ("base64", "invalid", "json", "parse", "required", "unsupported")
+SENSITIVE_RESPONSE_HEADERS = {
+    "authorization", "proxy-authorization", "cookie", "set-cookie", "www-authenticate"
+}
 
 
 def log_startup(phase: str, outcome: str, error_type: str | None = None) -> None:
@@ -42,7 +48,42 @@ def log_startup(phase: str, outcome: str, error_type: str | None = None) -> None
         STARTUP_LOGGER.info("writer_startup phase=%s outcome=%s", phase, outcome)
 
 
-def log_write_failure(operation_id: str, alias: str, error: Exception) -> None:
+def redact_secret(text: str, value: str) -> str:
+    encoded = base64.b64encode(value.encode("utf-8")).decode("ascii")
+    encoded_urlsafe = base64.urlsafe_b64encode(value.encode("utf-8")).decode("ascii")
+    variants = {
+        value,
+        encoded,
+        encoded_urlsafe,
+        quote(value, safe=""),
+        quote_plus(value),
+        html.escape(value, quote=True),
+        repr(value)[1:-1],
+        json.dumps(value, ensure_ascii=True)[1:-1],
+        quote(encoded, safe=""),
+        quote_plus(encoded),
+        quote(encoded_urlsafe, safe=""),
+        quote_plus(encoded_urlsafe),
+    }
+    for variant in sorted((item for item in variants if item), key=len, reverse=True):
+        text = text.replace(variant, "****")
+    return text
+
+
+def safe_response_headers(headers, value: str) -> str:
+    if not isinstance(headers, Mapping):
+        return "{}"
+    sanitized = {}
+    for name, header_value in headers.items():
+        safe_name = redact_secret(str(name), value)
+        if str(name).lower() in SENSITIVE_RESPONSE_HEADERS:
+            sanitized[safe_name] = "****"
+        else:
+            sanitized[safe_name] = redact_secret(str(header_value), value)
+    return json.dumps(sanitized, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def log_write_failure(operation_id: str, alias: str, error: Exception, value: str) -> None:
     if os.environ.get("WRITER_DEBUG_DIAGNOSTICS", "").lower() != "true":
         return
 
@@ -59,7 +100,10 @@ def log_write_failure(operation_id: str, alias: str, error: Exception) -> None:
     if not isinstance(request_id, str) or not SAFE_REQUEST_ID_PATTERN.fullmatch(request_id):
         request_id = "unknown"
     message = getattr(error, "message", None)
-    if isinstance(message, str):
+    if not isinstance(message, str):
+        message = str(error)
+    message = redact_secret(message, value)[:2048]
+    if message:
         error_fields = [
             field for field in SAFE_ERROR_FIELDS
             if re.search(rf"(?<![A-Za-z0-9_]){field}(?![A-Za-z0-9_])", message, re.IGNORECASE)
@@ -72,18 +116,18 @@ def log_write_failure(operation_id: str, alias: str, error: Exception) -> None:
         error_fields = []
         error_hints = []
 
-    WRITE_LOGGER.warning(
-        "writer_write outcome=unconfirmed operation_id=%s alias=%s error_type=%s "
-        "error_code=%s http_status=%s oci_request_id=%s error_fields=%s error_hints=%s",
-        operation_id,
-        alias,
-        error_type,
-        error_code,
-        status,
-        request_id,
-        ",".join(error_fields) or "unknown",
-        ",".join(error_hints) or "unknown",
+    headers = safe_response_headers(getattr(error, "headers", {}), value)
+
+    context = (
+        f"operation_id={operation_id} alias={alias} error_type={error_type} "
+        f"error_code={error_code} http_status={status} oci_request_id={request_id} "
+        f"error_fields={','.join(error_fields) or 'unknown'} "
+        f"error_hints={','.join(error_hints) or 'unknown'} "
+        f"service_message={json.dumps(message, ensure_ascii=True)} response_headers={headers}"
     )
+    safe_context = redact_secret(context, value)
+    secret_hash = hashlib.sha256(value.encode("utf-8")).hexdigest()
+    WRITE_LOGGER.warning("writer_write outcome=unconfirmed %s secret_sha256=%s", safe_context, secret_hash)
 
 
 def log_write_request(operation_id: str, alias: str, value: str, encoded: str) -> None:
@@ -103,17 +147,19 @@ def log_write_request(operation_id: str, alias: str, value: str, encoded: str) -
     except (ValueError, TypeError):
         base64_valid = "false"
 
-    WRITE_LOGGER.info(
-        "writer_write_request operation_id=%s alias=%s payload_size=%s base64_valid=%s "
-        "content_type=BASE64 stage=CURRENT request_fields=secretContent,contentType,name,stage,content",
-        operation_id,
-        alias,
-        size_bucket,
-        base64_valid,
+    context = (
+        f"operation_id={operation_id} alias={alias} payload_size={size_bucket} "
+        f"base64_valid={base64_valid} content_type=BASE64 stage=CURRENT "
+        "request_fields=secretContent,contentType,name,stage,content"
     )
+    safe_context = redact_secret(context, value)
+    secret_hash = hashlib.sha256(value.encode("utf-8")).hexdigest()
+    WRITE_LOGGER.info("writer_write_request %s secret_sha256=%s", safe_context, secret_hash)
 
 
-def log_write_success(operation_id: str, alias: str, response, version: int | None) -> None:
+def log_write_success(
+    operation_id: str, alias: str, response, version: int | None, value: str
+) -> None:
     if os.environ.get("WRITER_DEBUG_DIAGNOSTICS", "").lower() != "true":
         return
 
@@ -122,14 +168,13 @@ def log_write_success(operation_id: str, alias: str, response, version: int | No
         status = "unknown"
     outcome = "confirmed" if isinstance(version, int) and not isinstance(version, bool) else "response_unconfirmed"
     version_number = version if isinstance(version, int) and not isinstance(version, bool) else "unknown"
-    WRITE_LOGGER.info(
-        "writer_write outcome=%s operation_id=%s alias=%s http_status=%s current_version_number=%s",
-        outcome,
-        operation_id,
-        alias,
-        status,
-        version_number,
+    context = (
+        f"outcome={outcome} operation_id={operation_id} alias={alias} "
+        f"http_status={status} current_version_number={version_number}"
     )
+    safe_context = redact_secret(context, value)
+    secret_hash = hashlib.sha256(value.encode("utf-8")).hexdigest()
+    WRITE_LOGGER.info("writer_write %s secret_sha256=%s", safe_context, secret_hash)
 
 
 def load_catalog(path: str) -> dict[str, dict[str, str]]:
@@ -179,7 +224,7 @@ def update_secret(
     )
     version = getattr(response.data, "current_version_number", None)
     version = version if isinstance(version, int) and not isinstance(version, bool) else None
-    log_write_success(operation_id, alias, response, version)
+    log_write_success(operation_id, alias, response, version, value)
     return version
 
 
@@ -250,8 +295,8 @@ def create_app(catalog: dict[str, dict[str, str]], vault_client, public_origin: 
                 version = update_secret(vault_client, catalog[alias], value, alias, operation_id)
             return render_template("status.html", ok=True, version=version), 200
         except Exception as error:
-            # Keep the HTMX response generic and log only sanitized diagnostics.
-            log_write_failure(operation_id, alias, error)
+            # Keep the HTMX response generic and redact the submitted value from diagnostics.
+            log_write_failure(operation_id, alias, error, value)
             return render_template(
                 "status.html", ok=False, version=None, operation_id=operation_id
             ), 200
