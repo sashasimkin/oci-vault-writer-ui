@@ -218,7 +218,7 @@ class HttpBoundaryTests(unittest.TestCase):
         self.assertIn("response_headers=", output)
         self.assertIn("service_message=", output)
         self.assertIn("****", output)
-        header_match = re.search(r"response_headers=(\{.*\})$", output)
+        header_match = re.search(r"response_headers=(\{.*\}) secret_sha256=", output)
         self.assertIsNotNone(header_match)
         self.assertEqual(json.loads(header_match.group(1))["authorization"], "****")
         self.assertEqual(json.loads(header_match.group(1))["x-debug"], "****")
