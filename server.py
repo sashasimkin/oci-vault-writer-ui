@@ -104,7 +104,7 @@ def update_secret(vault_client, secret: dict[str, str], value: str, alias: str) 
         )
     )
     response = vault_client.update_secret(
-        secret["id"], details, opc_retry_token=str(uuid.uuid4()),
+        secret["id"], details, opc_request_id=str(uuid.uuid4()),
         retry_strategy=oci.retry.NoneRetryStrategy(),
     )
     version = getattr(response.data, "current_version_number", None)

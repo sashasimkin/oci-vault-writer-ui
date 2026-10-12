@@ -53,8 +53,13 @@ class WriteTests(unittest.TestCase):
             data = types.SimpleNamespace(current_version_number=9)
 
         class FakeClient:
-            def update_secret(self, secret_id, details, **kwargs):
-                captured.update(secret_id=secret_id, details=details, kwargs=kwargs)
+            def update_secret(self, secret_id, details, *, opc_request_id, retry_strategy):
+                captured.update(
+                    secret_id=secret_id,
+                    details=details,
+                    opc_request_id=opc_request_id,
+                    retry_strategy=retry_strategy,
+                )
                 return FakeResponse()
 
         fake_models = types.SimpleNamespace(
@@ -74,7 +79,8 @@ class WriteTests(unittest.TestCase):
         content = captured["details"].secret_content
         self.assertEqual(content.stage, "CURRENT")
         self.assertEqual(content.content, "c3ludGhldGljIHRlc3QgZml4dHVyZQ==")
-        self.assertEqual(captured["kwargs"]["retry_strategy"], "no-retry")
+        self.assertEqual(captured["retry_strategy"], "no-retry")
+        self.assertRegex(captured["opc_request_id"], r"^[a-f0-9-]{36}$")
         self.assertNotIn("synthetic test fixture", json.dumps({"version": version}))
 
 
