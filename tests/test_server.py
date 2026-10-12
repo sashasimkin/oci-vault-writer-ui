@@ -211,7 +211,7 @@ class HttpBoundaryTests(unittest.TestCase):
         self.assertIn("error_type=SyntheticServiceError", output)
         self.assertIn("error_code=NotAuthorizedOrNotFound", output)
         self.assertIn("error_fields=secretContent,contentType", output)
-        self.assertIn("error_hints=invalid", output)
+        self.assertIn("error_hints=base64,invalid,json", output)
         self.assertIn("http_status=403", output)
         self.assertIn("oci_request_id=request-safe-123", output)
         self.assertIn('"content-type":"application/json"', output)
