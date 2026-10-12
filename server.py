@@ -21,6 +21,9 @@ ALIAS_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 SECRET_ID_PATTERN = re.compile(r"^ocid1\.vaultsecret\.[A-Za-z0-9._-]+$")
 WRITE_LOCK = threading.Lock()
 STARTUP_LOGGER = logging.getLogger("vault_writer")
+WRITE_LOGGER = logging.getLogger("vault_writer.write")
+SAFE_ERROR_CODE_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9]{0,63}$")
+SAFE_REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:/-]{1,128}$")
 
 
 def log_startup(phase: str, outcome: str, error_type: str | None = None) -> None:
@@ -32,6 +35,35 @@ def log_startup(phase: str, outcome: str, error_type: str | None = None) -> None
         )
     elif os.environ.get("WRITER_DEBUG_DIAGNOSTICS", "").lower() == "true":
         STARTUP_LOGGER.info("writer_startup phase=%s outcome=%s", phase, outcome)
+
+
+def log_write_failure(operation_id: str, alias: str, error: Exception) -> None:
+    if os.environ.get("WRITER_DEBUG_DIAGNOSTICS", "").lower() != "true":
+        return
+
+    error_type = type(error).__name__
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,63}", error_type):
+        error_type = "UnknownError"
+    error_code = getattr(error, "code", None)
+    if not isinstance(error_code, str) or not SAFE_ERROR_CODE_PATTERN.fullmatch(error_code):
+        error_code = "unknown"
+    status = getattr(error, "status", None)
+    if not isinstance(status, int) or isinstance(status, bool) or not 100 <= status <= 599:
+        status = "unknown"
+    request_id = getattr(error, "request_id", None)
+    if not isinstance(request_id, str) or not SAFE_REQUEST_ID_PATTERN.fullmatch(request_id):
+        request_id = "unknown"
+
+    WRITE_LOGGER.warning(
+        "writer_write outcome=unconfirmed operation_id=%s alias=%s error_type=%s "
+        "error_code=%s http_status=%s oci_request_id=%s",
+        operation_id,
+        alias,
+        error_type,
+        error_code,
+        status,
+        request_id,
+    )
 
 
 def load_catalog(path: str) -> dict[str, dict[str, str]]:
@@ -140,15 +172,17 @@ def create_app(catalog: dict[str, dict[str, str]], vault_client, public_origin: 
         value = request.form.get("value", "")
         if alias not in catalog or not isinstance(value, str) or not value or len(value.encode("utf-8")) > MAX_VALUE_BYTES:
             abort(400)
+        operation_id = uuid.uuid4().hex
         try:
             with WRITE_LOCK:
                 version = update_secret(vault_client, catalog[alias], value, alias)
             return render_template("status.html", ok=True, version=version), 200
-        except Exception:
-            # No exception or request details are logged or returned.
-            # A 2xx fragment lets HTMX render the generic failure without
-            # exposing any SDK response or submitted value.
-            return render_template("status.html", ok=False, version=None), 200
+        except Exception as error:
+            # Keep the HTMX response generic and log only sanitized diagnostics.
+            log_write_failure(operation_id, alias, error)
+            return render_template(
+                "status.html", ok=False, version=None, operation_id=operation_id
+            ), 200
         finally:
             value = None
 

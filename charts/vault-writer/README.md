@@ -11,8 +11,10 @@ IPv4 CIDR, ingress hostname, and TLS Secret. Keep these bindings in the consumin
 GitOps configuration rather than chart defaults.
 
 `debugDiagnostics` defaults to `false`. When enabled, startup logs report only
-fixed phase names and outcomes; they never include configuration values,
-catalog entries, file paths, exception messages, or tracebacks.
+fixed phase names and outcomes. Failed writes report a correlation ID, allowed
+catalog alias, exception class, sanitized OCI error code/status, and OCI request
+ID. Logs never include submitted values, request/response bodies, exception
+messages, or tracebacks.
 
 Image-pull credentials are optional and should be configured only when the
 selected container registry requires authentication. The public GHCR image does

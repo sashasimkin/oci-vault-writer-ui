@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sys
 import types
 import unittest
@@ -105,6 +106,36 @@ class HttpBoundaryTests(unittest.TestCase):
             status, body = self.request({"alias": "test_secret", "value": "synthetic-not-a-secret"})
         self.assertEqual(status, 200)
         self.assertNotIn("synthetic-not-a-secret", body)
+
+    def test_debug_write_failure_logs_only_safe_oci_diagnostics(self):
+        sentinel = "SYNTHETIC_PRIVATE_VALUE_DO_NOT_LOG"
+
+        class SyntheticServiceError(Exception):
+            code = "NotAuthorizedOrNotFound"
+            status = 403
+            request_id = "request-safe-123"
+            headers = {"authorization": sentinel}
+
+        with (
+            patch.dict(os.environ, {"WRITER_DEBUG_DIAGNOSTICS": "true"}),
+            patch.object(server, "update_secret", side_effect=SyntheticServiceError(sentinel)),
+            self.assertLogs("vault_writer.write", level="WARNING") as captured,
+        ):
+            status, body = self.request({"alias": "test_secret", "value": sentinel})
+
+        output = "\n".join(captured.output)
+        self.assertEqual(status, 200)
+        self.assertNotIn(sentinel, body)
+        self.assertNotIn(sentinel, output)
+        operation_id = re.search(r"operation_id=([a-f0-9]{32})", output)
+        self.assertIsNotNone(operation_id)
+        self.assertIn(operation_id.group(1), body)
+        self.assertIn("writer_write outcome=unconfirmed", output)
+        self.assertIn("alias=test_secret", output)
+        self.assertIn("error_type=SyntheticServiceError", output)
+        self.assertIn("error_code=NotAuthorizedOrNotFound", output)
+        self.assertIn("http_status=403", output)
+        self.assertIn("oci_request_id=request-safe-123", output)
 
     def test_request_cannot_choose_an_unlisted_secret(self):
         with patch.object(server, "update_secret") as update:
