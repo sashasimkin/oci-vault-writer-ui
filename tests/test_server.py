@@ -80,6 +80,7 @@ class WriteTests(unittest.TestCase):
         self.assertEqual(version, 9)
         self.assertEqual(captured["secret_id"], secret["id"])
         content = captured["details"].secret_content
+        self.assertIs(captured["details"].enable_auto_generation, False)
         self.assertEqual(content.stage, "CURRENT")
         self.assertEqual(content.content, "c3ludGhldGljIHRlc3QgZml4dHVyZQ==")
         self.assertEqual(captured["retry_strategy"], "no-retry")

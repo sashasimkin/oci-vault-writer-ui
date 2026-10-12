@@ -169,7 +169,8 @@ def update_secret(
     details = oci.vault.models.UpdateSecretDetails(
         secret_content=oci.vault.models.Base64SecretContentDetails(
             content_type="BASE64", name=version_name, stage="CURRENT", content=encoded
-        )
+        ),
+        enable_auto_generation=False,
     )
     log_write_request(operation_id, alias, value, encoded)
     response = vault_client.update_secret(
